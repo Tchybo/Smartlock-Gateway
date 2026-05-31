@@ -1,0 +1,27 @@
+name: smartlock-gateway
+
+services:
+  node-red:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartlock-gateway
+    restart: unless-stopped
+
+    ports:
+      - "1880:1880"
+
+    volumes:
+      - ./data:/data
+
+    privileged: true
+    user: "0"
+    devices:
+       - "/dev/ttyUSB0:/dev/ttyUSB0"
+
+    environment:
+      TZ: Europe/Prague
+      BE_BASE_URL:  "${BE_BASE_URL}"
+      BE_API_KEY:   "${BE_API_KEY}"
+      BE_AUTH_MODE: "${BE_AUTH_MODE:-xapikey}"
+      NODE_RED_ENABLE_PROJECTS: "false"

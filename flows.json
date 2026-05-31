@@ -1,0 +1,1006 @@
+[
+  {
+    "id": "tab_init",
+    "type": "tab",
+    "label": "1) Init",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "tab_lora",
+    "type": "tab",
+    "label": "2) LoRa Bridge",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "tab_auth",
+    "type": "tab",
+    "label": "3) Authorization",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "tab_log",
+    "type": "tab",
+    "label": "4) Logging",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "tab_sync",
+    "type": "tab",
+    "label": "5) Backend Sync",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "tab_time",
+    "type": "tab",
+    "label": "6) Time Sync",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "serial_lora_e5",
+    "type": "serial-port",
+    "serialport": "/dev/ttyUSB0",
+    "serialbaud": "115200",
+    "databits": "8",
+    "parity": "none",
+    "stopbits": "1",
+    "waitfor": "",
+    "dtr": "none",
+    "rts": "none",
+    "cts": "none",
+    "dsr": "none",
+    "newline": "\\n",
+    "bin": "false",
+    "out": "char",
+    "addchar": "\\r\\n",
+    "responsetimeout": "10000"
+  },
+  {
+    "id": "sqlite_gateway_db",
+    "type": "sqlitedb",
+    "name": "gateway.db",
+    "db": "/data/gateway.db",
+    "mode": "RWC"
+  },
+  {
+    "id": "inj_1",
+    "type": "inject",
+    "z": "tab_init",
+    "name": "Once on start",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 120,
+    "y": 80,
+    "wires": [
+      [
+        "exec_2"
+      ]
+    ]
+  },
+  {
+    "id": "exec_2",
+    "type": "exec",
+    "z": "tab_init",
+    "command": "sqlite3 /data/gateway.db \".read /data/schema.sql\"",
+    "addpay": "",
+    "append": "",
+    "useSpawn": "false",
+    "timer": "10",
+    "oldrc": false,
+    "winHide": false,
+    "name": "Init schema via sqlite3 CLI",
+    "x": 360,
+    "y": 80,
+    "wires": [
+      [
+        "dbg_3"
+      ],
+      [
+        "dbg_4"
+      ],
+      [
+        "fn_5"
+      ]
+    ]
+  },
+  {
+    "id": "dbg_3",
+    "type": "debug",
+    "z": "tab_init",
+    "name": "schema stdout",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 600,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "dbg_4",
+    "type": "debug",
+    "z": "tab_init",
+    "name": "schema stderr",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 600,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "fn_5",
+    "type": "function",
+    "z": "tab_init",
+    "name": "Trigger boot AT sequence",
+    "func": "const slk = global.get('slk');\n// rc = 0 znamená OK; pokud schema failnul (rc != 0), pořád pošleme boot AT\n// (CREATE IF NOT EXISTS je idempotentní, schema mohlo už existovat z minula)\nconst rc = msg.payload;\nif (typeof rc === 'number' && rc !== 0) {\n  node.warn('schema init returned rc=' + rc + ', pokračuju s boot AT i tak');\n}\nconst out = slk.bootAtSequence.map(at => ({ payload: at, txKind: 'AT' }));\nreturn [ out ];",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 600,
+    "y": 80,
+    "wires": [
+      [
+        "lout_6"
+      ]
+    ]
+  },
+  {
+    "id": "lout_6",
+    "type": "link out",
+    "z": "tab_init",
+    "name": "to TX queue",
+    "mode": "link",
+    "links": [
+      "lin_e"
+    ],
+    "x": 820,
+    "y": 80
+  },
+  {
+    "id": "sin_7",
+    "type": "serial in",
+    "z": "tab_lora",
+    "name": "LoRa-E5 RX",
+    "serial": "serial_lora_e5",
+    "x": 130,
+    "y": 100,
+    "wires": [
+      [
+        "fn_8"
+      ]
+    ]
+  },
+  {
+    "id": "fn_8",
+    "type": "function",
+    "z": "tab_lora",
+    "name": "Parse LoRa line",
+    "func": "const slk = global.get('slk');\nconst line = (msg.payload || '').toString();\nconst parsed = slk.parseLoraLine(line);\nmsg.parsed = parsed;\nmsg.payload = parsed;\n// Výstup 1: RX (parsed.kind === 'RX')\n// Výstup 2: TX_DONE\n// Výstup 3: vše ostatní (OK/ERR/OTHER) – pro debug\nswitch (parsed.kind) {\n  case 'RX':       return [msg, null, null];\n  case 'TX_DONE':  return [null, msg, null];\n  default:         return [null, null, msg];\n}",
+    "outputs": 3,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 350,
+    "y": 100,
+    "wires": [
+      [
+        "fn_9"
+      ],
+      [
+        "fn_d"
+      ],
+      [
+        "dbg_f"
+      ]
+    ]
+  },
+  {
+    "id": "fn_9",
+    "type": "function",
+    "z": "tab_lora",
+    "name": "Decode card_event_t",
+    "func": "const slk = global.get('slk');\nconst hex = msg.parsed && msg.parsed.hex;\nif (!hex) { node.warn('No hex payload'); return null; }\n// Dispatch dle prvního bytu (msg_type)\nconst msgType = parseInt(hex.substr(0,2), 16);\nif (msgType !== slk.MSG_CARD_EVENT) {\n  node.warn('Ignoring non-card_event msg_type: 0x' + msgType.toString(16));\n  return null;\n}\nconst ev = slk.parseCardEvent(hex);\nif (!ev.ok) {\n  node.warn('parseCardEvent failed: ' + JSON.stringify(ev));\n  return null;\n}\nmsg.event = ev;\nmsg.payload = ev;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 580,
+    "y": 60,
+    "wires": [
+      [
+        "lout_a"
+      ]
+    ]
+  },
+  {
+    "id": "lout_a",
+    "type": "link out",
+    "z": "tab_lora",
+    "name": "to Authorization",
+    "mode": "link",
+    "links": [
+      "lin_g"
+    ],
+    "x": 800,
+    "y": 60
+  },
+  {
+    "id": "fn_d",
+    "type": "function",
+    "z": "tab_lora",
+    "name": "Signal TX_DONE -> queue",
+    "func": "msg._txDone = true;\nmsg.payload = null;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 580,
+    "y": 160,
+    "wires": [
+      [
+        "fn_b"
+      ]
+    ]
+  },
+  {
+    "id": "fn_b",
+    "type": "function",
+    "z": "tab_lora",
+    "name": "TX Queue (busy-guard)",
+    "func": "// Frontu držíme v context. Stav:\n//   ctx.queue = pole úkolů { payload, txKind }\n//   ctx.busy  = boolean (čekáme na TX_DONE z TXLRPKT)\n//\n// Vstupy:\n//   msg.payload = AT příkaz (string)\n//   msg.txKind = 'TXLRPKT' | 'AT'\n//   msg._txDone = true   (signál z line parseru)\nconst ctx = context;\nlet queue = ctx.get('queue') || [];\nlet busy  = ctx.get('busy')  || false;\n\nfunction emit() {\n  if (busy || queue.length === 0) return null;\n  const next = queue.shift();\n  ctx.set('queue', queue);\n  if (next.txKind === 'TXLRPKT') {\n    busy = true; ctx.set('busy', true);\n  }\n  // Pro AT příkazy přidáme malou prodlevu mezi commandy\n  // (Node-RED serial-out posílá hned; spoléháme na addchar '\\r\\n' v config)\n  return { payload: next.payload };\n}\n\nif (msg._txDone) {\n  busy = false; ctx.set('busy', false);\n  const out = emit();\n  node.status({ fill: busy?'yellow':'green', shape: busy?'ring':'dot', text: 'queue='+queue.length });\n  return out ? [out] : null;\n}\n\n// Standardní vstup: enqueue\nconst item = {\n  payload: msg.payload,\n  txKind: msg.txKind || 'AT'\n};\n// Pokud je vstupem pole, rozbal:\nconst items = Array.isArray(item.payload) ? item.payload.map(p => ({payload: p, txKind: item.txKind})) : [item];\nqueue.push(...items);\nctx.set('queue', queue);\nnode.status({ fill: busy?'yellow':'green', shape: busy?'ring':'dot', text: 'queue='+queue.length });\nconst out = emit();\nreturn out ? [out] : null;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 350,
+    "y": 260,
+    "wires": [
+      [
+        "sout_c"
+      ]
+    ]
+  },
+  {
+    "id": "sout_c",
+    "type": "serial out",
+    "z": "tab_lora",
+    "name": "LoRa-E5 TX",
+    "serial": "serial_lora_e5",
+    "x": 580,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "lin_e",
+    "type": "link in",
+    "z": "tab_lora",
+    "name": "TX in",
+    "links": [],
+    "x": 130,
+    "y": 260,
+    "wires": [
+      [
+        "fn_b"
+      ]
+    ]
+  },
+  {
+    "id": "dbg_f",
+    "type": "debug",
+    "z": "tab_lora",
+    "name": "LoRa misc",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "parsed.raw",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 580,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "lin_g",
+    "type": "link in",
+    "z": "tab_auth",
+    "name": "card_event in",
+    "links": [],
+    "x": 110,
+    "y": 200,
+    "wires": [
+      [
+        "fn_h"
+      ]
+    ]
+  },
+  {
+    "id": "fn_h",
+    "type": "function",
+    "z": "tab_auth",
+    "name": "Route by event type",
+    "func": "// REQUEST -> pokračuje na lookup\n// Outcome (GRANTED/DENIED/TIMEOUT/OFFLINE) -> aktualizace logu\nconst slk = global.get('slk');\nconst ev = msg.event;\nif (!ev) return null;\nif (ev.event === slk.EVENT.REQUEST) {\n  return [msg, null];\n}\nreturn [null, msg];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 320,
+    "y": 200,
+    "wires": [
+      [
+        "fn_i"
+      ],
+      [
+        "fn_n"
+      ]
+    ]
+  },
+  {
+    "id": "fn_i",
+    "type": "function",
+    "z": "tab_auth",
+    "name": "Build authorize SQL",
+    "func": "// Sestaví parametrizovaný dotaz, který v jednom SELECTu zjistí vše potřebné:\n//   - card podle UID\n//   - user podle card.userId\n//   - roomId z device map\n//   - aktivní permission user+room v čase NOW\nconst ev = msg.event;\nconst uid = ev.uid;\nconst deviceId = ev.device_id;\n// Použijeme aktuální čas serveru (NOT MCU timestamp, který může být 0).\nconst now = new Date().toISOString();\nmsg.topic = `\nSELECT\n  c.id   AS cardId,  c.status AS cardStatus, c.userId AS userId,\n  u.status AS userStatus, u.name AS userName,\n  d.roomId AS roomId, d.defaultOpenMs AS defaultOpenMs,\n  r.status AS roomStatus,\n  p.id    AS permId, p.status AS permStatus, p.validFrom AS validFrom, p.validTo AS validTo\nFROM (SELECT ${'$uid'} AS uid, ${'$deviceId'} AS deviceId, ${'$now'} AS now) q\nLEFT JOIN cards c       ON c.code = q.uid\nLEFT JOIN users u       ON u.id   = c.userId\nLEFT JOIN devices d     ON d.device_id = q.deviceId\nLEFT JOIN rooms r       ON r.id   = d.roomId\nLEFT JOIN permissions p ON p.userId = c.userId\n                       AND p.roomId = d.roomId\n                       AND p.status = 'ACTIVE'\n                       AND (p.validFrom IS NULL OR p.validFrom <= q.now)\n                       AND (p.validTo   IS NULL OR p.validTo   >= q.now);\n`;\n// SQLite node očekává parametry v msg.params (object)\nmsg.params = { '$uid': uid, '$deviceId': deviceId, '$now': now };\nmsg._authCtx = { uid, deviceId, seq: ev.seq, requestedAt: now };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 140,
+    "wires": [
+      [
+        "sql_j"
+      ]
+    ]
+  },
+  {
+    "id": "sql_j",
+    "type": "sqlite",
+    "z": "tab_auth",
+    "mydb": "sqlite_gateway_db",
+    "sqlquery": "prepared",
+    "sql": "",
+    "name": "Authorize lookup",
+    "x": 780,
+    "y": 140,
+    "wires": [
+      [
+        "fn_k"
+      ]
+    ]
+  },
+  {
+    "id": "fn_k",
+    "type": "function",
+    "z": "tab_auth",
+    "name": "Decide & build response",
+    "func": "const slk = global.get('slk');\nconst row = (Array.isArray(msg.payload) && msg.payload[0]) || null;\nconst ctx = msg._authCtx || {};\nlet decision = 0;\nlet openMs   = 0;\nlet denyReason = null;\nlet roomId = row && row.roomId;\nlet userId = row && row.userId;\nlet cardId = row && row.cardId;\n\nif (!row) {\n  denyReason = 'NO_LOOKUP_RESULT';\n} else if (!row.roomId) {\n  denyReason = 'NO_ROOM_MAPPING';\n} else if (row.roomStatus !== 'ACTIVE') {\n  denyReason = 'ROOM_NOT_ACTIVE:' + row.roomStatus;\n} else if (!row.cardId) {\n  denyReason = 'NO_CARD';\n} else if (row.cardStatus !== 'ACTIVE') {\n  denyReason = 'CARD_DISABLED';\n} else if (!row.userId) {\n  denyReason = 'CARD_UNASSIGNED';\n} else if (row.userStatus !== 'ACTIVE') {\n  denyReason = 'USER_NOT_ACTIVE:' + row.userStatus;\n} else if (!row.permId) {\n  denyReason = 'NO_PERMISSION_OR_OUT_OF_WINDOW';\n} else {\n  decision = 1;\n  openMs = row.defaultOpenMs || 3000;\n}\n\nconst hex = slk.buildAuthResponse({ seq: ctx.seq, decision, open_ms: openMs });\n\n// 1. Připravíme TX zprávu\nconst txMsg = {\n  payload: slk.atTxLrPkt(hex),\n  txKind: 'TXLRPKT',\n  _meta: { seq: ctx.seq, decision, openMs }\n};\n\n// 2. Připravíme log zápis (REQUEST řádek)\nconst logMsg = {\n  topic: 'INSERT_LOG',\n  log: {\n    device_id: ctx.deviceId,\n    roomId,\n    seq: ctx.seq,\n    uid: ctx.uid,\n    cardId, userId,\n    requestedAt: ctx.requestedAt,\n    completedAt: null,         // doplní outcome event\n    decision,\n    result: null,              // doplní outcome event (OK | DENIED | TIMEOUT | GENERIC_ERROR)\n    openMs,\n    denyReason\n  }\n};\n\nnode.status({\n  fill: decision ? 'green' : 'red',\n  shape: 'dot',\n  text: `seq=${ctx.seq} dec=${decision} ${denyReason||''}`\n});\n\nreturn [ txMsg, logMsg ];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1010,
+    "y": 140,
+    "wires": [
+      [
+        "lout_l"
+      ],
+      [
+        "lout_m"
+      ]
+    ]
+  },
+  {
+    "id": "lout_l",
+    "type": "link out",
+    "z": "tab_auth",
+    "name": "to TX queue",
+    "mode": "link",
+    "links": [
+      "lin_e"
+    ],
+    "x": 1240,
+    "y": 100
+  },
+  {
+    "id": "lout_m",
+    "type": "link out",
+    "z": "tab_auth",
+    "name": "to Logging",
+    "mode": "link",
+    "links": [
+      "lin_p"
+    ],
+    "x": 1240,
+    "y": 180
+  },
+  {
+    "id": "fn_n",
+    "type": "function",
+    "z": "tab_auth",
+    "name": "Build outcome update",
+    "func": "const slk = global.get('slk');\nconst ev = msg.event;\nconst resultMap = {\n  [slk.EVENT.GRANTED]: 'OK',\n  [slk.EVENT.DENIED]:  'DENIED',\n  [slk.EVENT.TIMEOUT]: 'TIMEOUT',\n  [slk.EVENT.OFFLINE]: 'GENERIC_ERROR'\n};\nmsg.topic = 'UPDATE_LOG_OUTCOME';\nmsg.outcome = {\n  device_id: ev.device_id,\n  seq: ev.seq,\n  completedAt: new Date().toISOString(),\n  result: resultMap[ev.event] || 'GENERIC_ERROR'\n};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 280,
+    "wires": [
+      [
+        "lout_o"
+      ]
+    ]
+  },
+  {
+    "id": "lout_o",
+    "type": "link out",
+    "z": "tab_auth",
+    "name": "to Logging",
+    "mode": "link",
+    "links": [
+      "lin_p"
+    ],
+    "x": 780,
+    "y": 280
+  },
+  {
+    "id": "lin_p",
+    "type": "link in",
+    "z": "tab_log",
+    "name": "log in",
+    "links": [],
+    "x": 110,
+    "y": 200,
+    "wires": [
+      [
+        "fn_q"
+      ]
+    ]
+  },
+  {
+    "id": "fn_q",
+    "type": "function",
+    "z": "tab_log",
+    "name": "Route by topic",
+    "func": "if (msg.topic === 'INSERT_LOG')           return [msg, null];\nif (msg.topic === 'UPDATE_LOG_OUTCOME')   return [null, msg];\nreturn null;",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 320,
+    "y": 200,
+    "wires": [
+      [
+        "fn_r"
+      ],
+      [
+        "fn_s"
+      ]
+    ]
+  },
+  {
+    "id": "fn_r",
+    "type": "function",
+    "z": "tab_log",
+    "name": "Build INSERT SQL",
+    "func": "const L = msg.log;\nconst esc = s => s===null||s===undefined ? 'NULL' : \"'\" + String(s).replace(/'/g, \"''\") + \"'\";\nconst num = n => (n===null||n===undefined) ? 'NULL' : Number(n);\n// INSERT OR IGNORE – pokud REQUEST dorazí dvakrát (replay), nezduplikujeme\nmsg.topic = `\nINSERT OR IGNORE INTO access_log\n (device_id, roomId, seq, uid, cardId, userId, requestedAt, decision, openMs, denyReason)\n VALUES (${num(L.device_id)}, ${num(L.roomId)}, ${num(L.seq)}, ${esc(L.uid)},\n         ${num(L.cardId)}, ${num(L.userId)}, ${esc(L.requestedAt)},\n         ${num(L.decision)}, ${num(L.openMs)}, ${esc(L.denyReason)});`;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 140,
+    "wires": [
+      [
+        "sql_t"
+      ]
+    ]
+  },
+  {
+    "id": "fn_s",
+    "type": "function",
+    "z": "tab_log",
+    "name": "Build UPDATE SQL",
+    "func": "const O = msg.outcome;\nconst esc = s => s===null||s===undefined ? 'NULL' : \"'\" + String(s).replace(/'/g, \"''\") + \"'\";\nmsg.topic = `\nUPDATE access_log\n   SET completedAt = ${esc(O.completedAt)},\n       result      = ${esc(O.result)}\n WHERE device_id   = ${Number(O.device_id)}\n   AND seq         = ${Number(O.seq)};`;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 260,
+    "wires": [
+      [
+        "sql_u"
+      ]
+    ]
+  },
+  {
+    "id": "sql_t",
+    "type": "sqlite",
+    "z": "tab_log",
+    "mydb": "sqlite_gateway_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "name": "INSERT log",
+    "x": 780,
+    "y": 140,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "sql_u",
+    "type": "sqlite",
+    "z": "tab_log",
+    "mydb": "sqlite_gateway_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "name": "UPDATE log",
+    "x": 780,
+    "y": 260,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "inj_v",
+    "type": "inject",
+    "z": "tab_sync",
+    "name": "Pull every 60s",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "60",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 110,
+    "y": 80,
+    "wires": [
+      [
+        "fn_w"
+      ]
+    ]
+  },
+  {
+    "id": "fn_w",
+    "type": "function",
+    "z": "tab_sync",
+    "name": "Fan-out entities",
+    "func": "// Auth modes (BE_AUTH_MODE):\n//   'bearer'  (default) -> Authorization: Bearer <BE_API_KEY>\n//   'xapikey'           -> x-api-key: <BE_API_KEY>\n//   'cookie'            -> Cookie: <BE_SESSION_COOKIE>   (NextAuth JWT fallback)\nconst base    = env.get('BE_BASE_URL')   || 'http://localhost:3000';\nconst apiKey  = env.get('BE_API_KEY')    || '';\nconst cookie  = env.get('BE_SESSION_COOKIE') || '';\nconst mode    = (env.get('BE_AUTH_MODE') || 'bearer').toLowerCase();\n\nlet headers = {};\nif (mode === 'xapikey' && apiKey)      headers = { 'x-api-key': apiKey };\nelse if (mode === 'cookie' && cookie)  headers = { 'Cookie': cookie };\nelse if (apiKey)                       headers = { 'Authorization': 'Bearer ' + apiKey };\n\nconst entities = [\n  { name: 'users',       path: 'users' },\n  { name: 'rooms',       path: 'rooms' },\n  { name: 'cards',       path: 'access-cards' },\n  { name: 'permissions', path: 'access-permissions' }\n];\n// Spustíme každou entitu od page=1, paginate-loop pokračuje v upsertFn.\nreturn [ entities.map(e => ({\n  url: `${base}/api/admin/${e.path}?page=1&limit=100`,\n  method: 'GET',\n  headers,\n  entity: e.name,\n  apiPath: e.path,\n  _page: 1\n})) ];",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 320,
+    "y": 80,
+    "wires": [
+      [
+        "http_x"
+      ]
+    ]
+  },
+  {
+    "id": "http_x",
+    "type": "http request",
+    "z": "tab_sync",
+    "name": "BE fetch",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "x": 540,
+    "y": 80,
+    "wires": [
+      [
+        "fn_y"
+      ]
+    ]
+  },
+  {
+    "id": "fn_y",
+    "type": "function",
+    "z": "tab_sync",
+    "name": "Upsert into cache",
+    "func": "// Očekáváme BE response { data: [...], meta: { total, page, limit, totalPages } }\nconst body = msg.payload || {};\nconst items = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []);\nconst meta  = body.meta || {};\nconst entity = msg.entity;\nconst apiPath = msg.apiPath;\nconst page = msg._page || 1;\nconst now = new Date().toISOString();\nconst esc = s => s===null||s===undefined ? 'NULL' : \"'\" + String(s).replace(/'/g, \"''\") + \"'\";\nconst num = n => (n===null||n===undefined) ? 'NULL' : Number(n);\n\n// Multi-row INSERT VALUES - jeden statement, žádné explicitní transakce.\n// node-red-node-sqlite obaluje každý topic do své transakce, BEGIN/COMMIT\n// by způsobilo \"transaction within a transaction\". Multi-row VALUES je\n// jediný INSERT, takže sqlite ho zvládne v jedné implicitní transakci.\nlet upsertSql = null;\nif (items.length > 0) {\n  if (entity === 'users') {\n    const values = items.map(u =>\n      `(${num(u.id)},${esc(u.uuid)},${esc(u.name)},${esc(u.email)},${esc(u.role)},${esc(u.status)},${esc(now)})`\n    ).join(',');\n    upsertSql = `INSERT OR REPLACE INTO users(id,uuid,name,email,role,status,updatedAt) VALUES ${values};`;\n  } else if (entity === 'rooms') {\n    const values = items.map(r =>\n      `(${num(r.id)},${esc(r.uuid)},${esc(r.name)},${esc(r.location)},${esc(r.status)},${esc(now)})`\n    ).join(',');\n    upsertSql = `INSERT OR REPLACE INTO rooms(id,uuid,name,location,status,updatedAt) VALUES ${values};`;\n  } else if (entity === 'cards') {\n    const values = items.map(c => {\n      const code = c.code ? String(c.code).toUpperCase() : null;\n      return `(${num(c.id)},${esc(c.uuid)},${esc(code)},${num(c.userId)},${esc(c.type||'RFID')},${esc(c.status)},${esc(c.assignedAt)},${esc(now)})`;\n    }).join(',');\n    upsertSql = `INSERT OR REPLACE INTO cards(id,uuid,code,userId,type,status,assignedAt,updatedAt) VALUES ${values};`;\n  } else if (entity === 'permissions') {\n    const values = items.map(p => {\n      const vFrom = p.from || p.validFrom || null;\n      const vTo   = p.to   || p.validTo   || null;\n      return `(${num(p.id)},${num(p.userId)},${num(p.roomId)},${esc(p.status)},${esc(vFrom)},${esc(vTo)},${esc(now)})`;\n    }).join(',');\n    upsertSql = `INSERT OR REPLACE INTO permissions(id,userId,roomId,status,validFrom,validTo,updatedAt) VALUES ${values};`;\n  }\n}\n\nconst isLastPage = !meta.totalPages || page >= meta.totalPages;\n\n// Output 1: pole zpráv - sqlite node je zpracuje postupně\nconst sqlMsgs = [];\nif (upsertSql) sqlMsgs.push({ topic: upsertSql });\nif (isLastPage) {\n  sqlMsgs.push({ topic: `UPDATE sync_state SET lastSyncAt=${esc(now)}, lastError=NULL WHERE entity=${esc(entity)};` });\n}\n\n// Output 2: paginate-loop\nlet nextMsg = null;\nif (!isLastPage) {\n  const base    = env.get('BE_BASE_URL')   || 'http://localhost:3000';\n  const apiKey  = env.get('BE_API_KEY')    || '';\n  const cookie  = env.get('BE_SESSION_COOKIE') || '';\n  const mode    = (env.get('BE_AUTH_MODE') || 'bearer').toLowerCase();\n  let headers = {};\n  if (mode === 'xapikey' && apiKey)      headers = { 'x-api-key': apiKey };\n  else if (mode === 'cookie' && cookie)  headers = { 'Cookie': cookie };\n  else if (apiKey)                       headers = { 'Authorization': 'Bearer ' + apiKey };\n  nextMsg = {\n    url: `${base}/api/admin/${apiPath}?page=${page+1}&limit=100`,\n    method: 'GET',\n    headers, entity, apiPath, _page: page + 1\n  };\n}\n\nnode.status({\n  fill: isLastPage ? 'green' : 'yellow',\n  shape: 'dot',\n  text: `${entity}: p${page}/${meta.totalPages||'?'} (+${items.length})`\n});\n\nreturn [ sqlMsgs.length ? sqlMsgs : null, nextMsg ];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 760,
+    "y": 80,
+    "wires": [
+      [
+        "sql_z"
+      ],
+      [
+        "http_x"
+      ]
+    ]
+  },
+  {
+    "id": "sql_z",
+    "type": "sqlite",
+    "z": "tab_sync",
+    "mydb": "sqlite_gateway_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "name": "Upsert cache",
+    "x": 990,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "catch_10",
+    "type": "catch",
+    "z": "tab_sync",
+    "name": "HTTP catch",
+    "scope": [
+      "http_x"
+    ],
+    "uncaught": false,
+    "x": 540,
+    "y": 140,
+    "wires": [
+      [
+        "fn_11"
+      ]
+    ]
+  },
+  {
+    "id": "fn_11",
+    "type": "function",
+    "z": "tab_sync",
+    "name": "Record sync error",
+    "func": "const esc = s => s===null||s===undefined ? 'NULL' : \"'\" + String(s).replace(/'/g, \"''\") + \"'\";\nconst entity = (msg.entity) || 'unknown';\nmsg.topic = `UPDATE sync_state SET lastError=${esc(msg.error && msg.error.message)} WHERE entity=${esc(entity)};`;\nnode.warn(`Sync ${entity} failed: ${msg.error && msg.error.message}`);\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 760,
+    "y": 140,
+    "wires": [
+      [
+        "sql_12"
+      ]
+    ]
+  },
+  {
+    "id": "sql_12",
+    "type": "sqlite",
+    "z": "tab_sync",
+    "mydb": "sqlite_gateway_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "name": "Save error",
+    "x": 990,
+    "y": 140,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "inj_13",
+    "type": "inject",
+    "z": "tab_sync",
+    "name": "Flush every 10s",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "10",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 110,
+    "y": 260,
+    "wires": [
+      [
+        "fn_14"
+      ]
+    ]
+  },
+  {
+    "id": "fn_14",
+    "type": "function",
+    "z": "tab_sync",
+    "name": "Select pending",
+    "func": "msg.topic = `SELECT * FROM access_log\n WHERE sentToBackend = 0\n   AND result IS NOT NULL    -- pouze \"kompletní\" záznamy (request + outcome)\n ORDER BY id ASC\n LIMIT 50;`;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 320,
+    "y": 260,
+    "wires": [
+      [
+        "sql_15"
+      ]
+    ]
+  },
+  {
+    "id": "sql_15",
+    "type": "sqlite",
+    "z": "tab_sync",
+    "mydb": "sqlite_gateway_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "name": "Select pending",
+    "x": 540,
+    "y": 260,
+    "wires": [
+      [
+        "fn_16"
+      ]
+    ]
+  },
+  {
+    "id": "fn_16",
+    "type": "function",
+    "z": "tab_sync",
+    "name": "Build POST body",
+    "func": "const rows = msg.payload || [];\nif (!rows.length) { node.status({fill:'grey',shape:'ring',text:'no pending'}); return null; }\n\n// POZOR: bez BE patche endpoint /api/gateway/access/logs neexistuje (404).\n// Logy zůstanou ve frontě s sendAttempts++. Toto je očekávané chování pro v1\n// scénář bez BE patche. Po aplikaci patche endpoint začne odpovídat 201.\nconst base    = env.get('BE_BASE_URL')   || 'http://localhost:3000';\nconst apiKey  = env.get('BE_API_KEY')    || '';\nconst cookie  = env.get('BE_SESSION_COOKIE') || '';\nconst mode    = (env.get('BE_AUTH_MODE') || 'bearer').toLowerCase();\nlet headers = { 'Content-Type': 'application/json' };\nif (mode === 'xapikey' && apiKey)      headers['x-api-key'] = apiKey;\nelse if (mode === 'cookie' && cookie)  headers['Cookie'] = cookie;\nelse if (apiKey)                       headers['Authorization'] = 'Bearer ' + apiKey;\n\nmsg.url = base + '/api/gateway/access/logs';\nmsg.method = 'POST';\nmsg.headers = headers;\nmsg.payload = {\n  items: rows.map(r => ({\n    deviceId:    r.device_id,\n    seq:         r.seq,\n    uid:         r.uid,\n    request: {\n      userId:    r.userId,\n      cardId:    r.cardId,\n      roomId:    r.roomId,\n      requestedAt: r.requestedAt\n    },\n    result: r.result ? {\n      result:      r.result,\n      completedAt: r.completedAt,\n      openMs:      r.openMs,\n      denyReason:  r.denyReason\n    } : null\n  }))\n};\nmsg._sentIds = rows.map(r => r.id);\nnode.status({fill:'yellow',shape:'dot',text:'sending '+rows.length});\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 760,
+    "y": 260,
+    "wires": [
+      [
+        "http_17"
+      ]
+    ]
+  },
+  {
+    "id": "http_17",
+    "type": "http request",
+    "z": "tab_sync",
+    "name": "BE log push",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "x": 990,
+    "y": 260,
+    "wires": [
+      [
+        "fn_18"
+      ]
+    ]
+  },
+  {
+    "id": "fn_18",
+    "type": "function",
+    "z": "tab_sync",
+    "name": "Mark sent",
+    "func": "const ids = msg._sentIds || [];\nconst sc = msg.statusCode;\nif (sc < 200 || sc >= 300) {\n  node.warn('BE responded ' + sc + ' on log push, will retry');\n  msg.topic = `UPDATE access_log\n                 SET sendAttempts = sendAttempts + 1,\n                     lastSendError = 'HTTP ${sc}'\n               WHERE id IN (${ids.join(',')});`;\n  node.status({fill:'red',shape:'dot',text:'HTTP '+sc});\n} else {\n  msg.topic = `UPDATE access_log\n                 SET sentToBackend = 1, lastSendError = NULL\n               WHERE id IN (${ids.join(',')});`;\n  node.status({fill:'green',shape:'dot',text:'sent '+ids.length});\n}\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1210,
+    "y": 260,
+    "wires": [
+      [
+        "sql_19"
+      ]
+    ]
+  },
+  {
+    "id": "sql_19",
+    "type": "sqlite",
+    "z": "tab_sync",
+    "mydb": "sqlite_gateway_db",
+    "sqlquery": "msg.topic",
+    "sql": "",
+    "name": "Update sent",
+    "x": 1430,
+    "y": 260,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "catch_1a",
+    "type": "catch",
+    "z": "tab_sync",
+    "name": "Push catch",
+    "scope": [
+      "http_17"
+    ],
+    "uncaught": false,
+    "x": 990,
+    "y": 320,
+    "wires": [
+      [
+        "fn_1b"
+      ]
+    ]
+  },
+  {
+    "id": "fn_1b",
+    "type": "function",
+    "z": "tab_sync",
+    "name": "Push failed",
+    "func": "const ids = msg._sentIds || [];\nnode.warn('BE log push failed: ' + (msg.error && msg.error.message));\nmsg.topic = `UPDATE access_log\n               SET sendAttempts = sendAttempts + 1,\n                   lastSendError = ${\"'\"+String(msg.error&&msg.error.message||'').replace(/'/g,\"''\")+\"'\"}\n             WHERE id IN (${ids.join(',')});`;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1210,
+    "y": 320,
+    "wires": [
+      [
+        "sql_19"
+      ]
+    ]
+  },
+  {
+    "id": "inj_1c",
+    "type": "inject",
+    "z": "tab_time",
+    "name": "Boot",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 110,
+    "y": 80,
+    "wires": [
+      [
+        "fn_1e"
+      ]
+    ]
+  },
+  {
+    "id": "inj_1d",
+    "type": "inject",
+    "z": "tab_time",
+    "name": "Every hour",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "3600",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 110,
+    "y": 140,
+    "wires": [
+      [
+        "fn_1e"
+      ]
+    ]
+  },
+  {
+    "id": "fn_1e",
+    "type": "function",
+    "z": "tab_time",
+    "name": "Build time_sync_t",
+    "func": "const slk = global.get('slk');\nconst hex = slk.buildTimeSync();\nreturn {\n  payload: slk.atTxLrPkt(hex),\n  txKind: 'TXLRPKT',\n  _meta: { kind: 'TIME_SYNC' }\n};",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 350,
+    "y": 110,
+    "wires": [
+      [
+        "lout_1f"
+      ]
+    ]
+  },
+  {
+    "id": "lout_1f",
+    "type": "link out",
+    "z": "tab_time",
+    "name": "to TX queue",
+    "mode": "link",
+    "links": [
+      "lin_e"
+    ],
+    "x": 580,
+    "y": 110
+  }
+]
