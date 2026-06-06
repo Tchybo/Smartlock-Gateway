@@ -16,7 +16,7 @@ module.exports = {
     // Sdílený modul s CRC / parser / builder funkcemi.
     // Vždy přístupný ve function nodu jako:  const slk = global.get('slk');
     functionGlobalContext: {
-        slk: require('/data/slk-protocol.js')
+        slk: (() => { delete require.cache[require.resolve('/data/slk-protocol.js')]; return require('/data/slk-protocol.js'); })()
     },
 
     // Povolit require() externích modulů ve function nodech (např. pokud bys
