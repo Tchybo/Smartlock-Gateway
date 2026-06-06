@@ -293,8 +293,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 350,
-        "y": 260,
+        "x": 390,
+        "y": 320,
         "wires": [
             [
                 "sout_c"
@@ -338,7 +338,7 @@
         "targetType": "msg",
         "statusVal": "",
         "statusType": "auto",
-        "x": 580,
+        "x": 410,
         "y": 200,
         "wires": []
     },
@@ -449,7 +449,7 @@
         "type": "function",
         "z": "tab_auth",
         "name": "Decide & build response",
-        "func": "const slk = global.get('slk');\nconst row = (Array.isArray(msg.payload) && msg.payload[0]) || null;\nconst ctx = msg._authCtx || {};\nlet decision = 0;\nlet openMs   = 0;\nlet denyReason = null;\nlet roomId = row && row.roomId;\nlet userId = row && row.userId;\nlet cardId = row && row.cardId;\nnode.warn('Decide: row=' + JSON.stringify(row) + ' decision=' + decision + ' denyReason=' + denyReason);\n\nif (!row) {\n  denyReason = 'NO_LOOKUP_RESULT';\n} else if (!row.roomId) {\n  denyReason = 'NO_ROOM_MAPPING';\n} else if (row.roomStatus !== 'ACTIVE') {\n  denyReason = 'ROOM_NOT_ACTIVE:' + row.roomStatus;\n} else if (!row.cardId) {\n  denyReason = 'NO_CARD';\n} else if (row.cardStatus !== 'ACTIVE') {\n  denyReason = 'CARD_DISABLED';\n} else if (!row.userId) {\n  denyReason = 'CARD_UNASSIGNED';\n} else if (row.userStatus !== 'ACTIVE') {\n  denyReason = 'USER_NOT_ACTIVE:' + row.userStatus;\n} else if (!row.permId) {\n  denyReason = 'NO_PERMISSION_OR_OUT_OF_WINDOW';\n} else {\n  decision = 1;\n  openMs = row.defaultOpenMs || 3000;\n}\n\nconst hex = slk.buildAuthResponse({ seq: ctx.seq, decision, open_ms: openMs });\n\n// 1. Připravíme TX zprávu\nconst txMsg = {\n  payload: slk.atTxLrPkt(hex),\n  txKind: 'TXLRPKT',\n  _meta: { seq: ctx.seq, decision, openMs }\n};\n\n// 2. Připravíme log zápis (REQUEST řádek)\nconst logMsg = {\n  topic: 'INSERT_LOG',\n  log: {\n    device_id: ctx.deviceId,\n    roomId,\n    seq: ctx.seq,\n    uid: ctx.uid,\n    cardId, userId,\n    requestedAt: ctx.requestedAt,\n    completedAt: null,         // doplní outcome event\n    decision,\n    result: null,              // doplní outcome event (OK | DENIED | TIMEOUT | GENERIC_ERROR)\n    openMs,\n    denyReason\n  }\n};\n\nnode.status({\n  fill: decision ? 'green' : 'red',\n  shape: 'dot',\n  text: `seq=${ctx.seq} dec=${decision} ${denyReason||''}`\n});\n\nreturn [ txMsg, logMsg ];",
+        "func": "const slk = global.get('slk');\nconst row = (Array.isArray(msg.payload) && msg.payload[0]) || null;\nconst ctx = msg._authCtx || {};\nlet decision = 0;\nlet openMs   = 0;\nlet denyReason = null;\nlet roomId = row && row.roomId;\nlet userId = row && row.userId;\nlet cardId = row && row.cardId;\nnode.warn('Decide: row=' + JSON.stringify(row) + ' decision=' + decision + ' denyReason=' + denyReason);\n\nif (!row) {\n  denyReason = 'NO_LOOKUP_RESULT';\n} else if (!row.roomId) {\n  denyReason = 'NO_ROOM_MAPPING';\n} else if (row.roomStatus !== 'ACTIVE') {\n  denyReason = 'ROOM_NOT_ACTIVE:' + row.roomStatus;\n} else if (!row.cardId) {\n  denyReason = 'NO_CARD';\n} else if (row.cardStatus !== 'ACTIVE') {\n  denyReason = 'CARD_DISABLED';\n} else if (!row.userId) {\n  denyReason = 'CARD_UNASSIGNED';\n} else if (row.userStatus !== 'ACTIVE') {\n  denyReason = 'USER_NOT_ACTIVE:' + row.userStatus;\n} else if (!row.permId) {\n  denyReason = 'NO_PERMISSION_OR_OUT_OF_WINDOW';\n} else {\n  decision = 1;\n  openMs = row.defaultOpenMs || 3000;\n}\n\nconst hex = slk.buildAuthResponse({ seq: ctx.seq, decision, open_ms: openMs });\n\n// 1. Připravíme TX zprávu\nconst txMsg = {\n  payload: slk.atTxLrPkt(hex),\n  txKind: 'TXLRPKT',\n  type: 'INSERT',\n  _meta: { seq: ctx.seq, decision, openMs }\n};\n\n// 2. Připravíme log zápis (REQUEST řádek)\nconst logMsg = {\n  topic: 'INSERT_LOG',\n  log: {\n    device_id: ctx.deviceId,\n    roomId,\n    seq: ctx.seq,\n    uid: ctx.uid,\n    cardId, userId,\n    requestedAt: ctx.requestedAt,\n    completedAt: null,         // doplní outcome event\n    decision,\n    result: null,              // doplní outcome event (OK | DENIED | TIMEOUT | GENERIC_ERROR)\n    openMs,\n    denyReason\n  }\n};\n\nnode.status({\n  fill: decision ? 'green' : 'red',\n  shape: 'dot',\n  text: `seq=${ctx.seq} dec=${decision} ${denyReason||''}`\n});\n\nreturn [ txMsg, logMsg ];",
         "outputs": 2,
         "timeout": "",
         "noerr": 0,
