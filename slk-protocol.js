@@ -53,8 +53,10 @@ function bufToHex(buf) {
 //  23:2  crc16        u16 LE  (přes byty 0..22)
 function parseCardEvent(hex) {
   const buf = hexToBuf(hex);
-  if (buf.length !== 24) return { ok: false, error: 'BAD_LENGTH', got: buf.length };
+  // Podporujeme 24 i 25 bytů (různé verze firmware)
+  if (buf.length !== 24 && buf.length !== 25) return { ok: false, error: 'BAD_LENGTH', got: buf.length };
   if (buf[0] !== MSG_CARD_EVENT) return { ok: false, error: 'BAD_MSG_TYPE', got: buf[0] };
+  // CRC je vždy přes byty 0..22, uložené na offsetu 23 (2 byty)
   const computed = crc16(buf.slice(0, 23));
   const received = buf.readUInt16LE(23);
   if (computed !== received) return { ok: false, error: 'BAD_CRC', computed, received };
@@ -111,7 +113,8 @@ function atTxLrPkt(hexPayload) {
 //                          +TEST: RX "010A000123..."
 // Některé firmware varianty mohou vracet `+TEST: RX "..."` bez metadat – ošetříme oboje.
 const RX_LINE_RE = /\+TEST:\s*RX\s*"([0-9A-Fa-f]+)"/;
-const TX_DONE_RE = /\+TEST:\s*TX\s*DONE/;
+const TX_DONE_RE = /\+TEST:\s*TX\s*DONE|\+TEST:\s*TXLRPKT\s*"|\+TEST:\s*RXLRPKT/;
+const TX_DONE_MODE = /^\+MODE:/;
 const TX_BUSY_RE = /\+TEST:\s*LoRaP2P busy/i;
 const ERR_RE     = /^\+(ERR|ERROR)/i;
 
@@ -148,6 +151,7 @@ module.exports = {
   // konfigurační AT sekvence – posílá se při bootu
   bootAtSequence: [
     'AT+MODE=TEST',
+    'AT+MODE=?',
     'AT+TEST=RFCFG,868,SF7,125,12,15,14,ON,OFF,OFF',
     'AT+TEST=RXLRPKT'
   ]
